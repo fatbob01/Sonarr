@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  FRAMEWORK: net6.0
   RAW_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
   SONARR_MAJOR_VERSION: 4
 
@@ -40,12 +39,18 @@ jobs:
           BRANCH_NAME="${RAW_BRANCH_NAME//\//-}"
           DOTNET_VERSION=$(jq -r '.sdk.version' global.json)
 
+          # Read the target framework from the csproj rather than hardcoding it,
+          # so an upstream .NET bump is picked up automatically.
+          FRAMEWORK=$(sed -n 's/.*<TargetFrameworks>\([^<]*\)<.*/\1/p' src/NzbDrone.Core/*.Core.csproj | head -1)
+          if [ -z "$FRAMEWORK" ]; then echo "Could not determine target framework"; exit 1; fi
+          echo "Target framework: $FRAMEWORK"
+
           # build.sh's EnableExtraPlatformsInSDK reads SDK_PATH from the env
           echo "SDK_PATH=${{ env.DOTNET_ROOT }}/sdk/${DOTNET_VERSION}" >> "$GITHUB_ENV"
           echo "SONARR_VERSION=$SONARR_VERSION" >> "$GITHUB_ENV"
           echo "BRANCH=$BRANCH_NAME" >> "$GITHUB_ENV"
 
-          echo "framework=${{ env.FRAMEWORK }}" >> "$GITHUB_OUTPUT"
+          echo "framework=$FRAMEWORK" >> "$GITHUB_OUTPUT"
           echo "major_version=${{ env.SONARR_MAJOR_VERSION }}" >> "$GITHUB_OUTPUT"
           echo "version=$SONARR_VERSION" >> "$GITHUB_OUTPUT"
           echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
