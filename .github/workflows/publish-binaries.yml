@@ -26,10 +26,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Deliberately not pinned to global.json. build.sh's
+      # EnableExtraPlatformsInSDK greps `dotnet --list-sdks` for a 6.x SDK to
+      # patch in freebsd support, and pinning leaves it unable to find one.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
 
       - name: Setup Environment Variables
         id: variables
