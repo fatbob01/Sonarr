@@ -26,11 +26,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Deliberately not pinned to global.json. build.sh's
-      # EnableExtraPlatformsInSDK greps `dotnet --list-sdks` for a 6.x SDK to
-      # patch in freebsd support, and pinning leaves it unable to find one.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
 
       - name: Setup Environment Variables
         id: variables
@@ -39,7 +38,10 @@ jobs:
           TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0.0")
           SONARR_VERSION="${TAG#v}"
           BRANCH_NAME="${RAW_BRANCH_NAME//\//-}"
+          DOTNET_VERSION=$(jq -r '.sdk.version' global.json)
 
+          # build.sh's EnableExtraPlatformsInSDK reads SDK_PATH from the env
+          echo "SDK_PATH=${{ env.DOTNET_ROOT }}/sdk/${DOTNET_VERSION}" >> "$GITHUB_ENV"
           echo "SONARR_VERSION=$SONARR_VERSION" >> "$GITHUB_ENV"
           echo "BRANCH=$BRANCH_NAME" >> "$GITHUB_ENV"
 
