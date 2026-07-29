@@ -1,9 +1,10 @@
 name: Sync Official Sonarr Release
 
 on:
-  schedule:
-    # Run daily at midnight UTC
-    - cron: '0 0 * * *'
+  # Cron disabled in this fork - we sync from actuallyevan/Sonarr manually
+  # rather than pulling straight from upstream Sonarr releases.
+  # schedule:
+  #   - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:

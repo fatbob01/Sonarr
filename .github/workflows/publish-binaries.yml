@@ -1,0 +1,157 @@
+name: Publish Binaries
+
+# Builds and publishes binaries for all platforms and attaches them to a
+# GitHub release. Triggered manually, the same way as Push Docker Image, so
+# the normal Build workflow stays fast and is not affected by this at all.
+
+on:
+  workflow_dispatch:
+
+env:
+  FRAMEWORK: net6.0
+  RAW_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+  SONARR_MAJOR_VERSION: 4
+
+jobs:
+  backend:
+    runs-on: windows-latest
+    outputs:
+      framework: ${{ steps.variables.outputs.framework }}
+      major_version: ${{ steps.variables.outputs.major_version }}
+      version: ${{ steps.variables.outputs.version }}
+      branch: ${{ steps.variables.outputs.branch }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup Environment Variables
+        id: variables
+        shell: bash
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0.0")
+          SONARR_VERSION="${TAG#v}"
+          BRANCH_NAME="${RAW_BRANCH_NAME//\//-}"
+
+          echo "SONARR_VERSION=$SONARR_VERSION" >> "$GITHUB_ENV"
+          echo "BRANCH=$BRANCH_NAME" >> "$GITHUB_ENV"
+
+          echo "framework=${{ env.FRAMEWORK }}" >> "$GITHUB_OUTPUT"
+          echo "major_version=${{ env.SONARR_MAJOR_VERSION }}" >> "$GITHUB_OUTPUT"
+          echo "version=$SONARR_VERSION" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Enable Extra Platforms In SDK
+        shell: bash
+        run: ./build.sh --enable-extra-platforms-in-sdk
+
+      - name: Build Backend
+        shell: bash
+        run: ./build.sh --backend --enable-extra-platforms --packages
+
+      - name: Publish FreeBSD Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_freebsd
+          path: _artifacts/freebsd-*/**/*
+
+      - name: Publish Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_linux
+          path: _artifacts/linux-*/**/*
+
+      - name: Publish macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_macos
+          path: _artifacts/osx-*/**/*
+
+      - name: Publish Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_windows
+          path: _artifacts/win-*/**/*
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Volta
+        uses: volta-cli/action@v4
+
+      - name: Yarn Install
+        run: yarn install
+
+      - name: Build
+        run: yarn build --env production
+
+      - name: Publish UI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_ui
+          path: _output/UI/**/*
+
+  package:
+    needs: [backend, frontend]
+    strategy:
+      matrix:
+        platform: [freebsd, linux, macos, windows]
+        include:
+          - platform: freebsd
+            os: ubuntu-latest
+          - platform: linux
+            os: ubuntu-latest
+          - platform: macos
+            os: ubuntu-latest
+          - platform: windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Package
+        uses: ./.github/actions/package
+        with:
+          framework: ${{ needs.backend.outputs.framework }}
+          platform: ${{ matrix.platform }}
+          artifact: build_${{ matrix.platform }}
+          branch: ${{ needs.backend.outputs.branch }}
+          major_version: ${{ needs.backend.outputs.major_version }}
+          version: ${{ needs.backend.outputs.version }}
+
+  release:
+    needs: [backend, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: _artifacts
+          pattern: release_*
+          merge-multiple: true
+
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: _artifacts/Sonarr.*
+          commit: ${{ github.sha }}
+          generateReleaseNotes: true
+          name: ${{ needs.backend.outputs.version }}
+          prerelease: ${{ needs.backend.outputs.branch != 'main' }}
+          allowUpdates: true
+          tag: v${{ needs.backend.outputs.version }}
